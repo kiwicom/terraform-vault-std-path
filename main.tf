@@ -3,15 +3,6 @@ resource "vault_policy" "path" {
   count  = length(var.roles) < 1 ? 1 : 0
   name   = "kw/${var.type}/${var.path}"
   policy = <<EOT
-path "kw/${var.type}/${var.path}/*" {
-  capabilities = ["read", "list"]
-}
-path "kw/${var.type}/${var.path}/" {
-  capabilities = ["read", "list"]
-}
-path "kw/${var.type}/${var.path}" {
-  capabilities = ["read"]
-}
 path "kw/${var.type}/data/${var.path}/*" {
   capabilities = ["read"]
 }
@@ -24,30 +15,31 @@ path "kw/${var.type}/metadata/${var.path}/*" {
 EOT
 }
 
+data "vault_policy_document" "path_maintainers" {
+  rule {
+    capabilities = ["create", "update", "read", "delete", "list"]
+    path = "kw/${var.type}/data/${var.path}/*"
+  }
+
+  rule {
+    capabilities = ["create", "update", "read", "delete", "list"]
+    path = "kw/${var.type}/metadata/${var.path}/*"
+  }
+
+  dynamic rule {
+    for_each = split("/", var.path)
+    content {
+      path         = "kw/${var.type}/metadata/${join("/", slice(split("/", var.path), 0, rule.key))}"
+      capabilities = ["list"]
+      description  = "list of subpath"
+    }
+  }
+}
+
 # policy-maintainer
 resource "vault_policy" "path_maintainers" {
   name   = "kw/${var.type}/${var.path}-maintainer"
-  policy = <<EOT
-# access namespace, stage specific secrets
-path "kw/${var.type}/${var.path}/*" {
-  capabilities = ["create", "update", "read", "delete", "list"]
-}
-path "kw/${var.type}/${var.path}/" {
-  capabilities = ["create", "update", "read", "delete", "list"]
-}
-path "kw/${var.type}/${var.path}" {
-  capabilities = ["create", "update", "read", "delete"]
-}
-path "kw/${var.type}/data/${var.path}/*" {
-  capabilities = ["create", "update", "read", "delete"]
-}
-path "kw/${var.type}/metadata/${var.path}" {
-  capabilities = ["create", "update", "read", "delete", "list"]
-}
-path "kw/${var.type}/metadata/${var.path}/*" {
-  capabilities = ["create", "update", "read", "delete", "list"]
-}
-EOT
+  policy = data.vault_policy_document.path_maintainers.hcl
 }
 
 # assignment
@@ -80,12 +72,6 @@ resource "vault_policy" "roles" {
   for_each = toset(var.roles)
   name     = "kw/${var.type}/${var.path}/creds/${each.value}"
   policy   = <<EOT
-path "kw/${var.type}/${var.path}/creds/${each.value}" {
-  capabilities = ["read", "list"]
-}
-path "kw/${var.type}/${var.path}/creds/${each.value}" {
-  capabilities = ["read", "list"]
-}
 path "kw/${var.type}/data/${var.path}/creds/${each.value}" {
   capabilities = ["read"]
 }
